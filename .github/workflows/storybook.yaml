@@ -1,0 +1,63 @@
+on:
+  repository_dispatch:
+    types:
+      - deploy
+
+  workflow_dispatch:
+    inputs:
+      ref:
+        required: false
+        default: "webgpu"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    environment: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - id: ref
+        run: |
+          SHA="${{ github.event.client_payload.sha }}"
+          REF="${{ github.event.client_payload.ref }}"
+          if [ -z "$REF" ]; then
+            REF="${{ inputs.ref }}"
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "ref=$REF" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          repository: "takram-design-engineering/three-geospatial"
+          ref: ${{ steps.ref.outputs.sha != '' && steps.ref.outputs.sha || steps.ref.outputs.ref }}
+          fetch-depth: 1
+          lfs: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "pnpm"
+
+      - run: |
+          pnpm install --frozen-lockfile
+          npx nx build-storybook-webgpu
+        env:
+          STORYBOOK_ION_API_TOKEN: ${{secrets.STORYBOOK_ION_API_TOKEN}}
+          STORYBOOK_GOOGLE_MAP_API_KEY: ${{secrets.STORYBOOK_GOOGLE_MAP_API_KEY}}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: storybook-webgpu/storybook-static
+
+      - uses: actions/deploy-pages@v4
+        with:
+          token: ${{ github.token }}
